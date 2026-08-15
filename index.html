@@ -1010,6 +1010,11 @@ Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jan
       throw new Error('API_ERROR ' + response.status + ': ' + apiMsg);
     }
 
+    // Instrumentasi diagnostik: modelVersion adalah field resmi dari Google yang
+    // menyatakan model APA YANG SEBENARNYA memproses request ini di server.
+    // Tidak menambah request API — hanya membaca field yang sudah ada di response.
+    console.log('[Fajar OS] modelVersion dari Gemini API:', data.modelVersion);
+
     if (!data.candidates || !data.candidates.length) {
       throw new Error('EMPTY_CANDIDATE: tidak ada response dari model (kemungkinan diblokir safety filter)');
     }
