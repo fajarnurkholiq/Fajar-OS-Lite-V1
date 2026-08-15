@@ -129,6 +129,16 @@
     border-bottom-left-radius:4px;
     font-style:italic;
   }
+  /* DIAGNOSTIK SEMENTARA: label kecil menampilkan modelVersion aktual dari API */
+  .msg.diag{
+    align-self:flex-start;
+    background:transparent;
+    border:1px dashed var(--border);
+    color:var(--text-faint);
+    font-size:11px;
+    padding:4px 10px;
+    max-width:100%;
+  }
 
   /* COOLDOWN BANNER */
   #cooldownBanner{
@@ -499,6 +509,7 @@ Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jan
   let memoryList = [];
   let isSending = false;
   let cooldownIntervalId = null;
+  let lastActualApiModel = null; // DIAGNOSTIK SEMENTARA: menyimpan data.modelVersion dari response terakhir
 
   /* ===================== DOM ===================== */
   const chatArea = document.getElementById('chatArea');
@@ -736,6 +747,10 @@ Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jan
         chatHistory.push({ role: 'model', text: displayText });
         appendMessageBubble('ai', displayText);
         saveChatHistory();
+
+        // DIAGNOSTIK SEMENTARA: tampilkan model aktual dari response API (bukan chat history, tidak tersimpan).
+        const actualModelLabel = lastActualApiModel ? lastActualApiModel : 'unavailable';
+        appendMessageBubble('diag', 'Actual API Model: ' + actualModelLabel);
 
         // Memory diambil dari blok di response yang sama, bukan request terpisah.
         saveNewMemoryFacts(newFacts);
@@ -1013,6 +1028,7 @@ Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jan
     // Instrumentasi diagnostik: modelVersion adalah field resmi dari Google yang
     // menyatakan model APA YANG SEBENARNYA memproses request ini di server.
     // Tidak menambah request API — hanya membaca field yang sudah ada di response.
+    lastActualApiModel = (data.modelVersion !== undefined && data.modelVersion !== null) ? data.modelVersion : null;
     console.log('[Fajar OS] modelVersion dari Gemini API:', data.modelVersion);
 
     if (!data.candidates || !data.candidates.length) {
