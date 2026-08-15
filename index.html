@@ -402,9 +402,9 @@
         <div class="section-title">Model</div>
         <label for="modelSelect">Pilih Model</label>
         <select id="modelSelect">
-          <option value="gemini-2.5-flash">gemini-2.5-flash (cepat, direkomendasikan)</option>
-          <option value="gemini-2.5-pro">gemini-2.5-pro (lebih kuat, lebih lambat)</option>
-          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          <option value="gemini-flash-latest">gemini-flash-latest (cepat, direkomendasikan)</option>
+          <option value="gemini-pro-latest">gemini-pro-latest (lebih kuat, lebih lambat)</option>
+          <option value="gemini-2.5-flash">gemini-2.5-flash (akan shutdown Okt 2026)</option>
           <option value="custom">Custom (isi manual)</option>
         </select>
         <input type="text" id="customModelInput" placeholder="Nama model custom..." style="margin-top:8px; display:none;">
@@ -541,8 +541,8 @@ Prinsip kamu:
     memoryList = lsGetJSON(LS_MEMORY, []);
 
     // model select restore
-    const savedModel = lsGet(LS_MODEL) || 'gemini-2.5-flash';
-    const knownModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+    const savedModel = lsGet(LS_MODEL) || 'gemini-flash-latest';
+    const knownModels = ['gemini-flash-latest', 'gemini-pro-latest', 'gemini-2.5-flash'];
     if (knownModels.includes(savedModel)) {
       modelSelect.value = savedModel;
       customModelInput.style.display = 'none';
@@ -689,26 +689,28 @@ Prinsip kamu:
   /* ===================== ERROR HUMANIZER ===================== */
   function humanizeError(err) {
     const msg = (err && err.message) ? err.message : String(err);
+    // ambil bagian setelah prefix kode (mis. "MODEL_NOT_FOUND: pesan asli") untuk ditampilkan ke user
+    const detail = msg.includes(': ') ? msg.slice(msg.indexOf(': ') + 2) : msg;
 
     if (msg.includes('NO_INTERNET') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-      return 'Fajar OS belum bisa menghubungi Gemini. Cek koneksi internet kamu.';
+      return 'Fajar OS belum bisa menghubungi Gemini. Cek koneksi internet kamu.\n\nDetail: ' + detail;
     }
     if (msg.includes('API_KEY_INVALID') || msg.includes('401') || msg.includes('403') || msg.includes('API key not valid')) {
-      return 'API key Gemini tidak valid. Cek kembali API key di Pengaturan.';
+      return 'API key Gemini ditolak oleh server.\n\nDetail dari Gemini: ' + detail;
     }
     if (msg.includes('MODEL_NOT_FOUND') || msg.includes('404') || msg.includes('not found')) {
-      return 'Model "' + getCurrentModel() + '" tidak ditemukan atau tidak tersedia. Coba ganti model di Pengaturan.';
+      return 'Model "' + getCurrentModel() + '" tidak ditemukan atau tidak tersedia untuk API key ini.\n\nDetail dari Gemini: ' + detail + '\n\nCoba ganti model di Pengaturan.';
     }
     if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429') || msg.includes('quota')) {
-      return 'Kuota atau rate limit Gemini API tercapai. Coba lagi beberapa saat lagi.';
+      return 'Kuota atau rate limit Gemini API tercapai.\n\nDetail: ' + detail;
     }
     if (msg.includes('PARSE_ERROR')) {
-      return 'Response dari Gemini tidak sesuai format yang diharapkan. Coba kirim ulang.';
+      return 'Response dari Gemini tidak sesuai format yang diharapkan. Coba kirim ulang.\n\nDetail: ' + detail;
     }
     if (msg.includes('EMPTY_CANDIDATE') || msg.includes('SAFETY')) {
       return 'Gemini tidak memberikan jawaban untuk pesan ini (kemungkinan diblokir filter keamanan). Coba ubah pesan kamu.';
     }
-    return 'Fajar OS belum bisa menghubungi Gemini. Cek API key, model, atau koneksi internet.';
+    return 'Fajar OS belum bisa menghubungi Gemini.\n\nDetail: ' + detail;
   }
 
   /* ===================== GEMINI API CALL ===================== */
@@ -728,7 +730,7 @@ Prinsip kamu:
   }
 
   async function callGemini(apiKey, model, latestUserText) {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
 
     const contents = buildContextContents();
     // pastikan pesan terakhir user sudah termasuk (sudah ditambahkan ke chatHistory sebelum dipanggil)
@@ -750,10 +752,15 @@ Prinsip kamu:
     try {
       response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify(body)
       });
     } catch (netErr) {
+      // Error jaringan asli dicatat di console tanpa menyentuh API key
+      console.error('[Fajar OS] Network error saat memanggil Gemini:', netErr.name, netErr.message);
       throw new Error('NO_INTERNET: ' + netErr.message);
     }
 
@@ -762,12 +769,16 @@ Prinsip kamu:
     try {
       data = JSON.parse(rawText);
     } catch (parseErr) {
+      console.error('[Fajar OS] Gagal parse JSON response. Status:', response.status, 'Body (potongan):', rawText.slice(0, 300));
       throw new Error('PARSE_ERROR: gagal membaca response (' + response.status + ')');
     }
 
     if (!response.ok) {
       const apiMsg = (data && data.error && data.error.message) ? data.error.message : ('HTTP ' + response.status);
       const status = (data && data.error && data.error.status) ? data.error.status : '';
+
+      // Log error asli dari Gemini API ke console (tanpa mencetak API key)
+      console.error('[Fajar OS] Gemini API error. HTTP', response.status, '| status:', status, '| message:', apiMsg, '| model:', model);
 
       if (response.status === 404 || status === 'NOT_FOUND') {
         throw new Error('MODEL_NOT_FOUND: ' + apiMsg);
@@ -807,7 +818,7 @@ Prinsip kamu:
   /* ===================== MEMORY EXTRACTION ===================== */
   async function extractMemory(apiKey, model, userText, aiText) {
     try {
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
 
       const extractPrompt = `Dari potongan percakapan berikut, identifikasi apakah ada FAKTA JANGKA PANJANG yang benar-benar berguna untuk diingat (preferensi user, project yang dikerjakan, keputusan penting, tujuan jangka panjang, workflow, tools yang dipakai, atau aturan kerja yang ditetapkan user).
 
@@ -829,11 +840,19 @@ AI: ${aiText}`;
 
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify(body)
       });
 
-      if (!response.ok) return; // diam-diam gagal, memory bukan fitur kritikal
+      if (!response.ok) {
+        // memory bukan fitur kritikal, jadi tidak mengganggu UI, tapi tetap dicatat untuk debug
+        const errBody = await response.text().catch(() => '');
+        console.warn('[Fajar OS] Ekstraksi memory gagal (non-fatal). HTTP', response.status, errBody.slice(0, 200));
+        return;
+      }
 
       const data = await response.json();
       if (!data.candidates || !data.candidates.length) return;
