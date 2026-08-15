@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Fajar OS</title>
+<style>
+  :root{
+    --bg:#0e0f11;
+    --bg-elev:#17181b;
+    --bg-elev2:#1f2024;
+    --border:#2a2b30;
+    --text:#e9e9ea;
+    --text-dim:#9a9ba0;
+    --text-faint:#65666b;
+    --accent:#5b8cff;
+    --accent-dim:#2a3a5c;
+    --danger:#ff5b5b;
+    --danger-dim:#3a2222;
+    --radius:14px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    height:100%;
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
+  #app{
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+    height:100dvh;
+    max-width:720px;
+    margin:0 auto;
+    position:relative;
+    background:var(--bg);
+  }
+
+  /* HEADER */
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:calc(10px + var(--safe-top)) 14px 10px;
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+    gap:8px;
+  }
+  .brand{display:flex; flex-direction:column; line-height:1.2; min-width:0;}
+  .brand h1{font-size:15px; font-weight:700; margin:0; letter-spacing:0.2px;}
+  .brand span{font-size:11px; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .header-actions{display:flex; gap:6px; flex-shrink:0;}
+  .icon-btn{
+    background:var(--bg-elev);
+    border:1px solid var(--border);
+    color:var(--text-dim);
+    border-radius:10px;
+    width:36px;
+    height:36px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    font-size:16px;
+    flex-shrink:0;
+  }
+  .icon-btn:active{background:var(--bg-elev2);}
+
+  /* CHAT AREA */
+  #chatArea{
+    flex:1;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding:14px 12px 10px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .empty-state{
+    margin:auto;
+    text-align:center;
+    color:var(--text-faint);
+    padding:20px;
+    font-size:13px;
+    line-height:1.6;
+  }
+  .empty-state b{color:var(--text-dim); display:block; font-size:15px; margin-bottom:6px;}
+
+  .msg{
+    max-width:88%;
+    padding:10px 13px;
+    border-radius:16px;
+    font-size:14.5px;
+    line-height:1.5;
+    white-space:pre-wrap;
+    word-wrap:break-word;
+  }
+  .msg.user{
+    align-self:flex-end;
+    background:var(--accent);
+    color:#fff;
+    border-bottom-right-radius:4px;
+  }
+  .msg.ai{
+    align-self:flex-start;
+    background:var(--bg-elev);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-bottom-left-radius:4px;
+  }
+  .msg.error{
+    align-self:flex-start;
+    background:var(--danger-dim);
+    border:1px solid #5c2f2f;
+    color:#ffb3b3;
+    border-bottom-left-radius:4px;
+  }
+  .msg.loading{
+    align-self:flex-start;
+    background:var(--bg-elev);
+    border:1px solid var(--border);
+    color:var(--text-faint);
+    border-bottom-left-radius:4px;
+    font-style:italic;
+  }
+
+  /* INPUT AREA */
+  #inputBar{
+    display:flex;
+    align-items:flex-end;
+    gap:8px;
+    padding:10px 12px calc(10px + var(--safe-bottom));
+    border-top:1px solid var(--border);
+    background:var(--bg);
+    flex-shrink:0;
+  }
+  #msgInput{
+    flex:1;
+    resize:none;
+    background:var(--bg-elev);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:18px;
+    padding:11px 14px;
+    font-size:15px;
+    line-height:1.4;
+    max-height:120px;
+    min-height:42px;
+    font-family:inherit;
+    outline:none;
+  }
+  #msgInput:focus{border-color:var(--accent);}
+  #sendBtn{
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    border-radius:50%;
+    width:42px;
+    height:42px;
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    font-size:18px;
+  }
+  #sendBtn:disabled{background:var(--bg-elev2); color:var(--text-faint);}
+  #sendBtn:active:not(:disabled){opacity:0.8;}
+
+  /* PANELS (Memory / Settings) */
+  .panel-overlay{
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,0.5);
+    display:none;
+    z-index:10;
+  }
+  .panel-overlay.open{display:block;}
+  .panel{
+    position:absolute;
+    top:0; right:0; bottom:0;
+    width:100%;
+    max-width:400px;
+    background:var(--bg);
+    border-left:1px solid var(--border);
+    display:flex;
+    flex-direction:column;
+    transform:translateX(100%);
+    transition:transform 0.22s ease;
+  }
+  .panel-overlay.open .panel{transform:translateX(0);}
+  .panel-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:calc(12px + var(--safe-top)) 16px 12px;
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+  }
+  .panel-header h2{font-size:16px; margin:0; font-weight:700;}
+  .panel-body{
+    flex:1;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding:16px;
+  }
+  .close-btn{
+    background:none;
+    border:none;
+    color:var(--text-dim);
+    font-size:22px;
+    cursor:pointer;
+    width:32px; height:32px;
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  /* FORMS */
+  label{
+    display:block;
+    font-size:12.5px;
+    color:var(--text-dim);
+    margin-bottom:6px;
+    margin-top:18px;
+    font-weight:600;
+  }
+  label:first-child{margin-top:0;}
+  input[type="text"], input[type="password"], select{
+    width:100%;
+    background:var(--bg-elev);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:11px 12px;
+    border-radius:10px;
+    font-size:14.5px;
+    outline:none;
+    font-family:inherit;
+  }
+  input:focus, select:focus{border-color:var(--accent);}
+  .hint{font-size:11.5px; color:var(--text-faint); margin-top:6px; line-height:1.5;}
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    padding:11px 16px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:var(--bg-elev);
+    color:var(--text);
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    width:100%;
+    margin-top:10px;
+    font-family:inherit;
+  }
+  .btn:active{background:var(--bg-elev2);}
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .btn-danger{background:var(--danger-dim); border-color:#5c2f2f; color:#ffb3b3;}
+  .status-msg{
+    font-size:12.5px;
+    padding:9px 11px;
+    border-radius:8px;
+    margin-top:10px;
+    display:none;
+  }
+  .status-msg.show{display:block;}
+  .status-msg.ok{background:#1c3324; color:#8fd9a4; border:1px solid #2a4d38;}
+  .status-msg.err{background:var(--danger-dim); color:#ffb3b3; border:1px solid #5c2f2f;}
+
+  .section-divider{
+    border:none;
+    border-top:1px solid var(--border);
+    margin:22px 0;
+  }
+  .section-title{
+    font-size:13px;
+    font-weight:700;
+    color:var(--text-dim);
+    margin-bottom:4px;
+  }
+
+  /* MEMORY LIST */
+  .mem-item{
+    background:var(--bg-elev);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:11px 12px;
+    margin-bottom:8px;
+  }
+  .mem-item p{margin:0 0 6px; font-size:13.5px; line-height:1.5;}
+  .mem-item .mem-meta{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .mem-item .mem-date{font-size:11px; color:var(--text-faint);}
+  .mem-item .mem-del{
+    background:none;
+    border:none;
+    color:var(--danger);
+    font-size:12px;
+    cursor:pointer;
+    padding:2px 6px;
+  }
+  .empty-note{color:var(--text-faint); font-size:13px; text-align:center; padding:30px 10px;}
+
+  /* CONFIRM MODAL */
+  .confirm-overlay{
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,0.6);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:20;
+    padding:20px;
+  }
+  .confirm-overlay.open{display:flex;}
+  .confirm-box{
+    background:var(--bg-elev);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:18px;
+    max-width:320px;
+    width:100%;
+  }
+  .confirm-box p{font-size:14px; margin:0 0 16px; line-height:1.5; color:var(--text);}
+  .confirm-actions{display:flex; gap:8px;}
+  .confirm-actions .btn{margin-top:0;}
+
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-thumb{background:var(--border); border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="brand">
+      <h1>Fajar OS</h1>
+      <span>Personal AI Workspace</span>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="btnNewChat" title="Chat Baru">✚</button>
+      <button class="icon-btn" id="btnMemory" title="Memory">🧠</button>
+      <button class="icon-btn" id="btnSettings" title="Pengaturan">⚙️</button>
+    </div>
+  </header>
+
+  <div id="chatArea">
+    <div class="empty-state" id="emptyState">
+      <b>Mulai percakapan</b>
+      Fajar OS siap membantu. Pastikan API key Gemini sudah diatur di Pengaturan.
+    </div>
+  </div>
+
+  <div id="inputBar">
+    <textarea id="msgInput" placeholder="Masukkan pesan..." rows="1"></textarea>
+    <button id="sendBtn" title="Kirim">➤</button>
+  </div>
+
+  <!-- MEMORY PANEL -->
+  <div class="panel-overlay" id="memoryOverlay">
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Memory Fajar OS</h2>
+        <button class="close-btn" id="closeMemory">✕</button>
+      </div>
+      <div class="panel-body">
+        <div id="memoryList"></div>
+        <button class="btn btn-danger" id="btnClearAllMemory">Hapus semua memory</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
+  <div class="panel-overlay" id="settingsOverlay">
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Pengaturan</h2>
+        <button class="close-btn" id="closeSettings">✕</button>
+      </div>
+      <div class="panel-body">
+
+        <div class="section-title">Gemini API Key</div>
+        <label for="apiKeyInput">API Key</label>
+        <input type="password" id="apiKeyInput" placeholder="Masukkan API key Gemini...">
+        <div class="hint" id="currentKeyHint">Belum ada API key tersimpan.</div>
+        <button class="btn btn-primary" id="btnSaveKey">Simpan API Key</button>
+        <div class="status-msg" id="keyStatus"></div>
+        <div class="hint">Fajar OS Lite menyimpan API key di browser. Cocok untuk penggunaan pribadi, bukan deployment publik.</div>
+
+        <hr class="section-divider">
+
+        <div class="section-title">Model</div>
+        <label for="modelSelect">Pilih Model</label>
+        <select id="modelSelect">
+          <option value="gemini-2.5-flash">gemini-2.5-flash (cepat, direkomendasikan)</option>
+          <option value="gemini-2.5-pro">gemini-2.5-pro (lebih kuat, lebih lambat)</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          <option value="custom">Custom (isi manual)</option>
+        </select>
+        <input type="text" id="customModelInput" placeholder="Nama model custom..." style="margin-top:8px; display:none;">
+        <div class="hint">Jika API mengembalikan error "model tidak ditemukan", coba ganti model di sini.</div>
+
+        <hr class="section-divider">
+
+        <div class="section-title">Hapus Data</div>
+        <button class="btn btn-danger" id="btnDeleteChat">Hapus semua chat</button>
+        <button class="btn btn-danger" id="btnDeleteMemory">Hapus semua memory</button>
+        <button class="btn btn-danger" id="btnDeleteKey">Hapus API key</button>
+
+        <div class="hint" style="margin-top:22px;">Fajar OS Lite adalah prototype personal. Penyimpanan API key di browser tidak cocok untuk aplikasi publik.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIRM MODAL -->
+  <div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-box">
+      <p id="confirmText">Yakin ingin melanjutkan?</p>
+      <div class="confirm-actions">
+        <button class="btn" id="confirmCancel" style="flex:1;">Batal</button>
+        <button class="btn btn-danger" id="confirmOk" style="flex:1;">Hapus</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ===================== STORAGE KEYS ===================== */
+  const LS_API_KEY = 'fajaros_api_key';
+  const LS_MODEL = 'fajaros_model';
+  const LS_CUSTOM_MODEL = 'fajaros_custom_model';
+  const LS_CHAT = 'fajaros_chat_history';
+  const LS_MEMORY = 'fajaros_memory';
+
+  const MAX_MEMORY_ITEMS = 40;
+  const MAX_CONTEXT_MESSAGES = 12; // pesan terakhir yang dikirim sebagai context
+
+  const SYSTEM_INSTRUCTION = `Kamu adalah Fajar OS, sebuah partner berpikir dan operator pribadi — bukan chatbot customer service generik.
+
+Prinsip kamu:
+- Berpikir jernih dan langsung ke inti, tidak bertele-tele.
+- Tidak mengarang fakta. Jika tidak yakin, akui ketidakpastian secara jujur.
+- Berikan rekomendasi yang konkret dan actionable, bukan jawaban generik.
+- Jangan selalu menyetujui user. Jika ide user lemah, jelaskan kelemahannya dengan jujur dan tawarkan alternatif yang lebih baik.
+- Fokus pada hasil, bukan basa-basi.
+- Pahami konteks percakapan dan memory yang diberikan.
+- Jawab selalu dalam Bahasa Indonesia, dengan nada natural dan personal — bukan gaya corporate AI.`;
+
+  /* ===================== STATE ===================== */
+  let chatHistory = []; // [{role:'user'|'model', text:'...'}]
+  let memoryList = [];
+  let isSending = false;
+
+  /* ===================== DOM ===================== */
+  const chatArea = document.getElementById('chatArea');
+  const emptyState = document.getElementById('emptyState');
+  const msgInput = document.getElementById('msgInput');
+  const sendBtn = document.getElementById('sendBtn');
+
+  const btnNewChat = document.getElementById('btnNewChat');
+  const btnMemory = document.getElementById('btnMemory');
+  const btnSettings = document.getElementById('btnSettings');
+
+  const memoryOverlay = document.getElementById('memoryOverlay');
+  const closeMemory = document.getElementById('closeMemory');
+  const memoryListEl = document.getElementById('memoryList');
+  const btnClearAllMemory = document.getElementById('btnClearAllMemory');
+
+  const settingsOverlay = document.getElementById('settingsOverlay');
+  const closeSettings = document.getElementById('closeSettings');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const currentKeyHint = document.getElementById('currentKeyHint');
+  const btnSaveKey = document.getElementById('btnSaveKey');
+  const keyStatus = document.getElementById('keyStatus');
+  const modelSelect = document.getElementById('modelSelect');
+  const customModelInput = document.getElementById('customModelInput');
+  const btnDeleteChat = document.getElementById('btnDeleteChat');
+  const btnDeleteMemory = document.getElementById('btnDeleteMemory');
+  const btnDeleteKey = document.getElementById('btnDeleteKey');
+
+  const confirmOverlay = document.getElementById('confirmOverlay');
+  const confirmText = document.getElementById('confirmText');
+  const confirmCancel = document.getElementById('confirmCancel');
+  const confirmOk = document.getElementById('confirmOk');
+
+  /* ===================== SAFE LOCALSTORAGE HELPERS ===================== */
+  function lsGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.error('localStorage error (get):', e);
+      return null;
+    }
+  }
+  function lsSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      console.error('localStorage error (set):', e);
+      return false;
+    }
+  }
+  function lsRemove(key) {
+    try {
+      localStorage.removeItem(key);
+      return true;
+    } catch (e) {
+      console.error('localStorage error (remove):', e);
+      return false;
+    }
+  }
+  function lsGetJSON(key, fallback) {
+    const raw = lsGet(key);
+    if (!raw) return fallback;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error('JSON parse error for', key, e);
+      return fallback;
+    }
+  }
+
+  /* ===================== INIT ===================== */
+  function init() {
+    chatHistory = lsGetJSON(LS_CHAT, []);
+    memoryList = lsGetJSON(LS_MEMORY, []);
+
+    // model select restore
+    const savedModel = lsGet(LS_MODEL) || 'gemini-2.5-flash';
+    const knownModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+    if (knownModels.includes(savedModel)) {
+      modelSelect.value = savedModel;
+      customModelInput.style.display = 'none';
+    } else {
+      modelSelect.value = 'custom';
+      customModelInput.style.display = 'block';
+      customModelInput.value = savedModel;
+    }
+
+    updateKeyHint();
+    renderChat();
+    autoResizeTextarea();
+  }
+
+  function getApiKey() {
+    return lsGet(LS_API_KEY) || '';
+  }
+
+  function getCurrentModel() {
+    if (modelSelect.value === 'custom') {
+      return (customModelInput.value || '').trim();
+    }
+    return modelSelect.value;
+  }
+
+  function maskKey(key) {
+    if (!key || key.length < 6) return '••••••••';
+    return key.slice(0, 2) + '••••••••' + key.slice(-4);
+  }
+
+  function updateKeyHint() {
+    const key = getApiKey();
+    if (key) {
+      currentKeyHint.textContent = 'Tersimpan: ' + maskKey(key);
+    } else {
+      currentKeyHint.textContent = 'Belum ada API key tersimpan.';
+    }
+  }
+
+  /* ===================== TEXTAREA AUTO-RESIZE ===================== */
+  function autoResizeTextarea() {
+    msgInput.style.height = 'auto';
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
+  }
+  msgInput.addEventListener('input', autoResizeTextarea);
+  msgInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  });
+
+  /* ===================== CHAT RENDERING ===================== */
+  function renderChat() {
+    chatArea.innerHTML = '';
+    if (chatHistory.length === 0) {
+      chatArea.appendChild(emptyState);
+      return;
+    }
+    chatHistory.forEach(msg => {
+      appendMessageBubble(msg.role === 'user' ? 'user' : 'ai', msg.text, false);
+    });
+    scrollToBottom();
+  }
+
+  function appendMessageBubble(type, text, scroll = true) {
+    if (emptyState.parentNode === chatArea) {
+      chatArea.removeChild(emptyState);
+    }
+    const div = document.createElement('div');
+    div.className = 'msg ' + type;
+    div.textContent = text;
+    chatArea.appendChild(div);
+    if (scroll) scrollToBottom();
+    return div;
+  }
+
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      chatArea.scrollTop = chatArea.scrollHeight;
+    });
+  }
+
+  function saveChatHistory() {
+    lsSet(LS_CHAT, JSON.stringify(chatHistory));
+  }
+
+  /* ===================== SEND MESSAGE ===================== */
+  async function handleSend() {
+    if (isSending) return;
+
+    const text = msgInput.value.trim();
+    if (!text) return;
+
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      appendMessageBubble('error', 'API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.');
+      return;
+    }
+
+    const model = getCurrentModel();
+    if (!model) {
+      appendMessageBubble('error', 'Model belum dipilih. Buka Pengaturan untuk memilih model.');
+      return;
+    }
+
+    // add user message
+    chatHistory.push({ role: 'user', text: text });
+    appendMessageBubble('user', text);
+    saveChatHistory();
+
+    msgInput.value = '';
+    autoResizeTextarea();
+
+    isSending = true;
+    sendBtn.disabled = true;
+    const loadingEl = appendMessageBubble('loading', 'Memuat...');
+
+    try {
+      const replyText = await callGemini(apiKey, model, text);
+      loadingEl.remove();
+
+      if (!replyText || !replyText.trim()) {
+        appendMessageBubble('error', 'Gemini mengembalikan response kosong. Coba kirim ulang pesan.');
+      } else {
+        chatHistory.push({ role: 'model', text: replyText });
+        appendMessageBubble('ai', replyText);
+        saveChatHistory();
+
+        // fire-and-forget memory extraction, tidak menghalangi UI
+        extractMemory(apiKey, model, text, replyText);
+      }
+    } catch (err) {
+      loadingEl.remove();
+      appendMessageBubble('error', humanizeError(err));
+    } finally {
+      isSending = false;
+      sendBtn.disabled = false;
+    }
+  }
+
+  sendBtn.addEventListener('click', handleSend);
+
+  /* ===================== ERROR HUMANIZER ===================== */
+  function humanizeError(err) {
+    const msg = (err && err.message) ? err.message : String(err);
+
+    if (msg.includes('NO_INTERNET') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+      return 'Fajar OS belum bisa menghubungi Gemini. Cek koneksi internet kamu.';
+    }
+    if (msg.includes('API_KEY_INVALID') || msg.includes('401') || msg.includes('403') || msg.includes('API key not valid')) {
+      return 'API key Gemini tidak valid. Cek kembali API key di Pengaturan.';
+    }
+    if (msg.includes('MODEL_NOT_FOUND') || msg.includes('404') || msg.includes('not found')) {
+      return 'Model "' + getCurrentModel() + '" tidak ditemukan atau tidak tersedia. Coba ganti model di Pengaturan.';
+    }
+    if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429') || msg.includes('quota')) {
+      return 'Kuota atau rate limit Gemini API tercapai. Coba lagi beberapa saat lagi.';
+    }
+    if (msg.includes('PARSE_ERROR')) {
+      return 'Response dari Gemini tidak sesuai format yang diharapkan. Coba kirim ulang.';
+    }
+    if (msg.includes('EMPTY_CANDIDATE') || msg.includes('SAFETY')) {
+      return 'Gemini tidak memberikan jawaban untuk pesan ini (kemungkinan diblokir filter keamanan). Coba ubah pesan kamu.';
+    }
+    return 'Fajar OS belum bisa menghubungi Gemini. Cek API key, model, atau koneksi internet.';
+  }
+
+  /* ===================== GEMINI API CALL ===================== */
+  function buildContextContents() {
+    // ambil beberapa pesan terakhir sebagai context
+    const recent = chatHistory.slice(-MAX_CONTEXT_MESSAGES);
+    return recent.map(m => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.text }]
+    }));
+  }
+
+  function buildMemoryBlock() {
+    if (!memoryList.length) return '';
+    const facts = memoryList.map(m => '- ' + m.fact).join('\n');
+    return '\n\nBerikut adalah memory jangka panjang tentang user yang sudah tersimpan. Gunakan sebagai konteks bila relevan:\n' + facts;
+  }
+
+  async function callGemini(apiKey, model, latestUserText) {
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+
+    const contents = buildContextContents();
+    // pastikan pesan terakhir user sudah termasuk (sudah ditambahkan ke chatHistory sebelum dipanggil)
+
+    const systemText = SYSTEM_INSTRUCTION + buildMemoryBlock();
+
+    const body = {
+      contents: contents,
+      systemInstruction: {
+        parts: [{ text: systemText }]
+      },
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2048
+      }
+    };
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch (netErr) {
+      throw new Error('NO_INTERNET: ' + netErr.message);
+    }
+
+    let data;
+    const rawText = await response.text();
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      throw new Error('PARSE_ERROR: gagal membaca response (' + response.status + ')');
+    }
+
+    if (!response.ok) {
+      const apiMsg = (data && data.error && data.error.message) ? data.error.message : ('HTTP ' + response.status);
+      const status = (data && data.error && data.error.status) ? data.error.status : '';
+
+      if (response.status === 404 || status === 'NOT_FOUND') {
+        throw new Error('MODEL_NOT_FOUND: ' + apiMsg);
+      }
+      if (response.status === 400 && /API key not valid/i.test(apiMsg)) {
+        throw new Error('API_KEY_INVALID: ' + apiMsg);
+      }
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('API_KEY_INVALID: ' + apiMsg);
+      }
+      if (response.status === 429) {
+        throw new Error('RESOURCE_EXHAUSTED: ' + apiMsg);
+      }
+      throw new Error('API_ERROR ' + response.status + ': ' + apiMsg);
+    }
+
+    if (!data.candidates || !data.candidates.length) {
+      throw new Error('EMPTY_CANDIDATE: tidak ada response dari model (kemungkinan diblokir safety filter)');
+    }
+
+    const candidate = data.candidates[0];
+    if (candidate.finishReason === 'SAFETY') {
+      throw new Error('EMPTY_CANDIDATE: SAFETY');
+    }
+
+    if (!candidate.content || !candidate.content.parts || !candidate.content.parts.length) {
+      throw new Error('EMPTY_CANDIDATE: struktur response tidak sesuai');
+    }
+
+    const textParts = candidate.content.parts
+      .map(p => p.text || '')
+      .filter(Boolean);
+
+    return textParts.join('\n').trim();
+  }
+
+  /* ===================== MEMORY EXTRACTION ===================== */
+  async function extractMemory(apiKey, model, userText, aiText) {
+    try {
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+
+      const extractPrompt = `Dari potongan percakapan berikut, identifikasi apakah ada FAKTA JANGKA PANJANG yang benar-benar berguna untuk diingat (preferensi user, project yang dikerjakan, keputusan penting, tujuan jangka panjang, workflow, tools yang dipakai, atau aturan kerja yang ditetapkan user).
+
+JANGAN ambil: percakapan random, emosi sesaat, hal sementara, informasi sensitif, API key, password, atau credential apapun.
+
+Jika tidak ada fakta jangka panjang yang layak disimpan, kembalikan array kosong.
+
+Balas HANYA dengan JSON array valid, tanpa markdown, tanpa penjelasan tambahan. Format:
+[{"fact": "isi fakta singkat dalam Bahasa Indonesia"}]
+
+Percakapan:
+User: ${userText}
+AI: ${aiText}`;
+
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 512 }
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) return; // diam-diam gagal, memory bukan fitur kritikal
+
+      const data = await response.json();
+      if (!data.candidates || !data.candidates.length) return;
+
+      let raw = data.candidates[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+      raw = raw.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+
+      let facts;
+      try {
+        facts = JSON.parse(raw);
+      } catch (e) {
+        return; // gagal parse, skip diam-diam
+      }
+
+      if (!Array.isArray(facts)) return;
+
+      let changed = false;
+      facts.forEach(f => {
+        if (f && typeof f.fact === 'string' && f.fact.trim()) {
+          memoryList.push({
+            fact: f.fact.trim(),
+            createdAt: new Date().toISOString()
+          });
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        // batasi jumlah memory
+        if (memoryList.length > MAX_MEMORY_ITEMS) {
+          memoryList = memoryList.slice(memoryList.length - MAX_MEMORY_ITEMS);
+        }
+        lsSet(LS_MEMORY, JSON.stringify(memoryList));
+      }
+    } catch (e) {
+      console.error('Memory extraction error:', e);
+      // diam-diam gagal, tidak mengganggu UX chat utama
+    }
+  }
+
+  /* ===================== NEW CHAT ===================== */
+  btnNewChat.addEventListener('click', function() {
+    if (chatHistory.length === 0) return;
+    showConfirm('Mulai chat baru? Percakapan saat ini akan dihapus.', function() {
+      chatHistory = [];
+      saveChatHistory();
+      renderChat();
+    });
+  });
+
+  /* ===================== MEMORY PANEL ===================== */
+  function openPanel(overlay) {
+    overlay.classList.add('open');
+  }
+  function closePanel(overlay) {
+    overlay.classList.remove('open');
+  }
+
+  btnMemory.addEventListener('click', function() {
+    renderMemoryList();
+    openPanel(memoryOverlay);
+  });
+  closeMemory.addEventListener('click', () => closePanel(memoryOverlay));
+  memoryOverlay.addEventListener('click', function(e) {
+    if (e.target === memoryOverlay) closePanel(memoryOverlay);
+  });
+
+  function renderMemoryList() {
+    memoryListEl.innerHTML = '';
+    if (!memoryList.length) {
+      const p = document.createElement('div');
+      p.className = 'empty-note';
+      p.textContent = 'Belum ada memory tersimpan.';
+      memoryListEl.appendChild(p);
+      return;
+    }
+    // tampilkan terbaru dulu
+    memoryList.slice().reverse().forEach((mem, idxRev) => {
+      const realIndex = memoryList.length - 1 - idxRev;
+      const item = document.createElement('div');
+      item.className = 'mem-item';
+
+      const p = document.createElement('p');
+      p.textContent = mem.fact;
+
+      const meta = document.createElement('div');
+      meta.className = 'mem-meta';
+
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'mem-date';
+      dateSpan.textContent = formatDate(mem.createdAt);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'mem-del';
+      delBtn.textContent = 'Hapus';
+      delBtn.addEventListener('click', function() {
+        memoryList.splice(realIndex, 1);
+        lsSet(LS_MEMORY, JSON.stringify(memoryList));
+        renderMemoryList();
+      });
+
+      meta.appendChild(dateSpan);
+      meta.appendChild(delBtn);
+      item.appendChild(p);
+      item.appendChild(meta);
+      memoryListEl.appendChild(item);
+    });
+  }
+
+  function formatDate(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+        ' ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return '-';
+    }
+  }
+
+  btnClearAllMemory.addEventListener('click', function() {
+    if (!memoryList.length) return;
+    showConfirm('Hapus semua memory Fajar OS? Tindakan ini tidak bisa dibatalkan.', function() {
+      memoryList = [];
+      lsSet(LS_MEMORY, JSON.stringify(memoryList));
+      renderMemoryList();
+    });
+  });
+
+  /* ===================== SETTINGS PANEL ===================== */
+  btnSettings.addEventListener('click', function() {
+    apiKeyInput.value = '';
+    keyStatus.classList.remove('show', 'ok', 'err');
+    updateKeyHint();
+    openPanel(settingsOverlay);
+  });
+  closeSettings.addEventListener('click', () => closePanel(settingsOverlay));
+  settingsOverlay.addEventListener('click', function(e) {
+    if (e.target === settingsOverlay) closePanel(settingsOverlay);
+  });
+
+  modelSelect.addEventListener('change', function() {
+    if (modelSelect.value === 'custom') {
+      customModelInput.style.display = 'block';
+    } else {
+      customModelInput.style.display = 'none';
+      lsSet(LS_MODEL, modelSelect.value);
+    }
+  });
+  customModelInput.addEventListener('input', function() {
+    if (modelSelect.value === 'custom') {
+      lsSet(LS_MODEL, customModelInput.value.trim());
+    }
+  });
+
+  btnSaveKey.addEventListener('click', function() {
+    const val = apiKeyInput.value.trim();
+    keyStatus.classList.remove('show', 'ok', 'err');
+
+    if (!val) {
+      keyStatus.textContent = 'API key tidak boleh kosong.';
+      keyStatus.classList.add('show', 'err');
+      return;
+    }
+
+    const ok = lsSet(LS_API_KEY, val);
+    if (ok) {
+      keyStatus.textContent = 'API Key tersimpan di perangkat ini.';
+      keyStatus.classList.add('show', 'ok');
+      apiKeyInput.value = '';
+      updateKeyHint();
+    } else {
+      keyStatus.textContent = 'Gagal menyimpan API key. Coba periksa pengaturan browser.';
+      keyStatus.classList.add('show', 'err');
+    }
+  });
+
+  btnDeleteChat.addEventListener('click', function() {
+    showConfirm('Hapus semua chat? Tindakan ini tidak bisa dibatalkan.', function() {
+      chatHistory = [];
+      saveChatHistory();
+      renderChat();
+    });
+  });
+
+  btnDeleteMemory.addEventListener('click', function() {
+    showConfirm('Hapus semua memory? Tindakan ini tidak bisa dibatalkan.', function() {
+      memoryList = [];
+      lsSet(LS_MEMORY, JSON.stringify(memoryList));
+    });
+  });
+
+  btnDeleteKey.addEventListener('click', function() {
+    showConfirm('Hapus API key Gemini dari perangkat ini?', function() {
+      lsRemove(LS_API_KEY);
+      updateKeyHint();
+    });
+  });
+
+  /* ===================== CONFIRM MODAL ===================== */
+  let pendingConfirmAction = null;
+
+  function showConfirm(text, onConfirm) {
+    confirmText.textContent = text;
+    pendingConfirmAction = onConfirm;
+    confirmOverlay.classList.add('open');
+  }
+  function hideConfirm() {
+    confirmOverlay.classList.remove('open');
+    pendingConfirmAction = null;
+  }
+  confirmCancel.addEventListener('click', hideConfirm);
+  confirmOverlay.addEventListener('click', function(e) {
+    if (e.target === confirmOverlay) hideConfirm();
+  });
+  confirmOk.addEventListener('click', function() {
+    if (typeof pendingConfirmAction === 'function') {
+      pendingConfirmAction();
+    }
+    hideConfirm();
+  });
+
+  /* ===================== START ===================== */
+  init();
+
+})();
+</script>
+</body>
+</html>
