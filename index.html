@@ -433,6 +433,7 @@
           <option value="custom">Custom (isi manual)</option>
         </select>
         <input type="text" id="customModelInput" placeholder="Nama model custom..." style="margin-top:8px; display:none;">
+        <div class="hint" id="activeModelIndicator" style="color:var(--accent); font-weight:600;">Active Model: -</div>
         <div class="hint">Jika API mengembalikan error "model tidak ditemukan", coba ganti model di sini.</div>
 
         <hr class="section-divider">
@@ -575,22 +576,41 @@ Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jan
     chatHistory = lsGetJSON(LS_CHAT, []);
     memoryList = lsGetJSON(LS_MEMORY, []);
 
-    // model select restore
-    const savedModel = lsGet(LS_MODEL) || 'gemini-flash-latest';
-    const knownModels = ['gemini-flash-latest', 'gemini-pro-latest', 'gemini-2.5-flash'];
-    if (knownModels.includes(savedModel)) {
-      modelSelect.value = savedModel;
-      customModelInput.style.display = 'none';
-    } else {
-      modelSelect.value = 'custom';
-      customModelInput.style.display = 'block';
-      customModelInput.value = savedModel;
-    }
+    syncModelUIFromStorage();
 
     updateKeyHint();
     renderChat();
     autoResizeTextarea();
     restoreCooldownIfActive();
+  }
+
+  // Menyinkronkan tampilan modelSelect & customModelInput dengan nilai model
+  // yang SEBENARNYA tersimpan di localStorage saat ini. Dipanggil saat init()
+  // dan setiap kali panel Pengaturan dibuka, agar UI tidak pernah menampilkan
+  // state basi dari kunjungan render sebelumnya.
+  function syncModelUIFromStorage() {
+    const savedModel = lsGet(LS_MODEL) || 'gemini-flash-latest';
+    const knownModels = ['gemini-flash-latest', 'gemini-pro-latest', 'gemini-2.5-flash'];
+    if (knownModels.includes(savedModel)) {
+      modelSelect.value = savedModel;
+      customModelInput.style.display = 'none';
+      customModelInput.value = '';
+    } else {
+      modelSelect.value = 'custom';
+      customModelInput.style.display = 'block';
+      customModelInput.value = savedModel;
+    }
+    updateActiveModelIndicator();
+  }
+
+  // Menampilkan model yang BENAR-BENAR akan dipakai oleh callGemini() jika
+  // user mengirim pesan saat ini juga — dibaca langsung dari getCurrentModel(),
+  // bukan diasumsikan dari elemen UI mana yang terlihat aktif.
+  function updateActiveModelIndicator() {
+    const el = document.getElementById('activeModelIndicator');
+    if (!el) return;
+    const current = getCurrentModel();
+    el.textContent = current ? ('Active Model: ' + current) : 'Active Model: (belum dipilih)';
   }
 
   function getApiKey() {
@@ -1103,6 +1123,7 @@ Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jan
     apiKeyInput.value = '';
     keyStatus.classList.remove('show', 'ok', 'err');
     updateKeyHint();
+    syncModelUIFromStorage();
     openPanel(settingsOverlay);
   });
   closeSettings.addEventListener('click', () => closePanel(settingsOverlay));
@@ -1117,10 +1138,12 @@ Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jan
       customModelInput.style.display = 'none';
       lsSet(LS_MODEL, modelSelect.value);
     }
+    updateActiveModelIndicator();
   });
   customModelInput.addEventListener('input', function() {
     if (modelSelect.value === 'custom') {
       lsSet(LS_MODEL, customModelInput.value.trim());
+      updateActiveModelIndicator();
     }
   });
 
