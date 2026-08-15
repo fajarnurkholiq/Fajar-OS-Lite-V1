@@ -130,6 +130,29 @@
     font-style:italic;
   }
 
+  /* COOLDOWN BANNER */
+  #cooldownBanner{
+    flex-shrink:0;
+    padding:10px 14px;
+    background:var(--danger-dim);
+    border-top:1px solid #5c2f2f;
+    color:#ffb3b3;
+    font-size:12.5px;
+    line-height:1.5;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+  }
+  #cooldownBanner .cd-text{flex:1;}
+  #cooldownBanner .cd-timer{
+    font-variant-numeric:tabular-nums;
+    font-weight:700;
+    font-size:14px;
+    color:#ffb3b3;
+    flex-shrink:0;
+  }
+
   /* INPUT AREA */
   #inputBar{
     display:flex;
@@ -361,6 +384,8 @@
     </div>
   </div>
 
+  <div id="cooldownBanner" style="display:none;"></div>
+
   <div id="inputBar">
     <textarea id="msgInput" placeholder="Masukkan pesan..." rows="1"></textarea>
     <button id="sendBtn" title="Kirim">➤</button>
@@ -445,6 +470,7 @@
   const LS_CUSTOM_MODEL = 'fajaros_custom_model';
   const LS_CHAT = 'fajaros_chat_history';
   const LS_MEMORY = 'fajaros_memory';
+  const LS_COOLDOWN = 'fajaros_cooldown';
 
   const MAX_MEMORY_ITEMS = 40;
   const MAX_CONTEXT_MESSAGES = 12; // pesan terakhir yang dikirim sebagai context
@@ -458,18 +484,27 @@ Prinsip kamu:
 - Jangan selalu menyetujui user. Jika ide user lemah, jelaskan kelemahannya dengan jujur dan tawarkan alternatif yang lebih baik.
 - Fokus pada hasil, bukan basa-basi.
 - Pahami konteks percakapan dan memory yang diberikan.
-- Jawab selalu dalam Bahasa Indonesia, dengan nada natural dan personal — bukan gaya corporate AI.`;
+- Jawab selalu dalam Bahasa Indonesia, dengan nada natural dan personal — bukan gaya corporate AI.
+
+Tentang memory: jika dari pesan user kali ini ada FAKTA JANGKA PANJANG yang benar-benar layak diingat untuk percakapan masa depan (preferensi user, project yang sedang dikerjakan, keputusan penting, tujuan jangka panjang, workflow, tools yang dipakai, atau aturan kerja yang ditetapkan user), sisipkan di BAGIAN PALING BAWAH jawabanmu sebuah blok terpisah dengan format PERSIS seperti ini (tanpa markdown code block, tanpa penjelasan tambahan):
+[[MEMORY]]
+- fakta singkat pertama
+- fakta singkat kedua
+[[/MEMORY]]
+Jangan sertakan API key, password, atau credential apapun di dalam blok ini. Jangan sertakan emosi sesaat atau hal sementara. Jika tidak ada fakta baru yang layak disimpan dari pesan ini, JANGAN sertakan blok [[MEMORY]] sama sekali — ini akan sering terjadi dan itu wajar.`;
 
   /* ===================== STATE ===================== */
   let chatHistory = []; // [{role:'user'|'model', text:'...'}]
   let memoryList = [];
   let isSending = false;
+  let cooldownIntervalId = null;
 
   /* ===================== DOM ===================== */
   const chatArea = document.getElementById('chatArea');
   const emptyState = document.getElementById('emptyState');
   const msgInput = document.getElementById('msgInput');
   const sendBtn = document.getElementById('sendBtn');
+  const cooldownBanner = document.getElementById('cooldownBanner');
 
   const btnNewChat = document.getElementById('btnNewChat');
   const btnMemory = document.getElementById('btnMemory');
@@ -555,6 +590,7 @@ Prinsip kamu:
     updateKeyHint();
     renderChat();
     autoResizeTextarea();
+    restoreCooldownIfActive();
   }
 
   function getApiKey() {
@@ -634,6 +670,11 @@ Prinsip kamu:
   async function handleSend() {
     if (isSending) return;
 
+    if (isCooldownActive()) {
+      // Tidak boleh ada request Gemini saat cooldown aktif.
+      return;
+    }
+
     const text = msgInput.value.trim();
     if (!text) return;
 
@@ -662,29 +703,175 @@ Prinsip kamu:
     const loadingEl = appendMessageBubble('loading', 'Memuat...');
 
     try {
-      const replyText = await callGemini(apiKey, model, text);
+      // Satu pesan user = tepat satu request Gemini. Tidak ada request kedua untuk memory.
+      const rawReplyText = await callGemini(apiKey, model, text);
       loadingEl.remove();
 
-      if (!replyText || !replyText.trim()) {
+      if (!rawReplyText || !rawReplyText.trim()) {
         appendMessageBubble('error', 'Gemini mengembalikan response kosong. Coba kirim ulang pesan.');
       } else {
-        chatHistory.push({ role: 'model', text: replyText });
-        appendMessageBubble('ai', replyText);
+        const { cleanText, newFacts } = extractInlineMemory(rawReplyText);
+        const displayText = cleanText || rawReplyText;
+
+        chatHistory.push({ role: 'model', text: displayText });
+        appendMessageBubble('ai', displayText);
         saveChatHistory();
 
-        // fire-and-forget memory extraction, tidak menghalangi UI
-        extractMemory(apiKey, model, text, replyText);
+        // Memory diambil dari blok di response yang sama, bukan request terpisah.
+        saveNewMemoryFacts(newFacts);
       }
     } catch (err) {
       loadingEl.remove();
       appendMessageBubble('error', humanizeError(err));
     } finally {
       isSending = false;
-      sendBtn.disabled = false;
+      // sendBtn hanya diaktifkan lagi jika tidak sedang cooldown
+      if (!isCooldownActive()) {
+        sendBtn.disabled = false;
+      }
     }
   }
 
   sendBtn.addEventListener('click', handleSend);
+
+  /* ===================== COOLDOWN (QUOTA / RATE LIMIT) ===================== */
+  // Struktur di localStorage: { untilTs: number (ms epoch), model: string, reason: string, hasKnownDelay: boolean }
+
+  function saveCooldown(untilTs, model, reason, hasKnownDelay) {
+    const data = { untilTs: untilTs, model: model, reason: reason, hasKnownDelay: !!hasKnownDelay };
+    lsSet(LS_COOLDOWN, JSON.stringify(data));
+    return data;
+  }
+
+  function clearCooldown() {
+    lsRemove(LS_COOLDOWN);
+    if (cooldownIntervalId) {
+      clearInterval(cooldownIntervalId);
+      cooldownIntervalId = null;
+    }
+    cooldownBanner.style.display = 'none';
+    cooldownBanner.innerHTML = '';
+    sendBtn.disabled = false;
+  }
+
+  function getCooldownData() {
+    return lsGetJSON(LS_COOLDOWN, null);
+  }
+
+  function restoreCooldownIfActive() {
+    const data = getCooldownData();
+    if (!data) return;
+    const remainingMs = data.untilTs - Date.now();
+    if (remainingMs <= 0) {
+      clearCooldown();
+      return;
+    }
+    startCooldownUI(data);
+  }
+
+  // Mulai cooldown baru berdasarkan hasil parsing error 429.
+  // retryDelaySeconds: angka detik dari retryDelay Gemini, atau null jika tidak diberikan API.
+  function startCooldown(model, reason, retryDelaySeconds) {
+    if (retryDelaySeconds === null || retryDelaySeconds === undefined) {
+      // Tidak ada waktu reset dari API — tidak menebak, tidak membuat countdown.
+      saveCooldown(0, model, reason, false);
+      cooldownBanner.style.display = 'flex';
+      cooldownBanner.innerHTML = '<span class="cd-text">Quota Gemini tercapai. Waktu reset belum diberikan oleh API. Coba lagi nanti.</span>';
+      sendBtn.disabled = true;
+      // Tombol tetap disabled tanpa countdown karena tidak ada dasar waktu yang valid untuk dihitung.
+      // User bisa membuka Pengaturan lalu kembali, atau reload, untuk mencoba lagi secara manual.
+      // Namun agar user tidak terkunci selamanya, sediakan cara manual: klik banner untuk reset percobaan.
+      cooldownBanner.style.cursor = 'pointer';
+      cooldownBanner.title = 'Tap untuk mencoba lagi';
+      cooldownBanner.onclick = function() {
+        clearCooldown();
+      };
+      return;
+    }
+
+    const untilTs = Date.now() + Math.ceil(retryDelaySeconds * 1000);
+    const data = saveCooldown(untilTs, model, reason, true);
+    startCooldownUI(data);
+  }
+
+  function startCooldownUI(data) {
+    sendBtn.disabled = true;
+    cooldownBanner.style.display = 'flex';
+    cooldownBanner.style.cursor = 'default';
+    cooldownBanner.onclick = null;
+
+    function tick() {
+      const remainingMs = data.untilTs - Date.now();
+      if (remainingMs <= 0) {
+        clearCooldown();
+        return;
+      }
+      const totalSec = Math.ceil(remainingMs / 1000);
+      const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
+      const ss = String(totalSec % 60).padStart(2, '0');
+      cooldownBanner.innerHTML =
+        '<span class="cd-text">Quota sementara tercapai. Coba lagi dalam ' + totalSec + ' detik.</span>' +
+        '<span class="cd-timer">' + mm + ':' + ss + '</span>';
+    }
+
+    tick();
+    if (cooldownIntervalId) clearInterval(cooldownIntervalId);
+    cooldownIntervalId = setInterval(tick, 1000);
+  }
+
+  function isCooldownActive() {
+    const data = getCooldownData();
+    if (!data) return false;
+    if (!data.hasKnownDelay) return true; // cooldown tanpa waktu pasti, tetap aktif sampai user tap manual
+    return (data.untilTs - Date.now()) > 0;
+  }
+
+  // Parse detik dari pesan error Gemini, contoh: "Please retry in 40.470273942s"
+  // atau dari field retryDelay pada error.details (format: "40s" / "40.47s").
+  function parseRetryDelaySeconds(errorData) {
+    try {
+      if (errorData && errorData.error && Array.isArray(errorData.error.details)) {
+        for (const d of errorData.error.details) {
+          if (d && typeof d.retryDelay === 'string') {
+            const m = d.retryDelay.match(/^([\d.]+)s$/);
+            if (m) return parseFloat(m[1]);
+          }
+        }
+      }
+      const msg = (errorData && errorData.error && errorData.error.message) ? errorData.error.message : '';
+      const m2 = msg.match(/retry in ([\d.]+)s/i);
+      if (m2) return parseFloat(m2[1]);
+    } catch (e) {
+      console.error('[Fajar OS] Gagal parse retryDelay:', e.message);
+    }
+    return null;
+  }
+
+  /* ===================== MEMORY (INLINE, TANPA REQUEST TAMBAHAN) ===================== */
+  // Gemini menyisipkan blok [[MEMORY]]...[[/MEMORY]] di response yang sama (lihat SYSTEM_INSTRUCTION).
+  // Fungsi ini mengekstrak blok tsb dari teks jawaban, lalu mengembalikan teks bersih untuk ditampilkan.
+  function extractInlineMemory(rawReplyText) {
+    const memRegex = /\[\[MEMORY\]\]([\s\S]*?)\[\[\/MEMORY\]\]/;
+    const match = rawReplyText.match(memRegex);
+    if (!match) {
+      return { cleanText: rawReplyText, newFacts: [] };
+    }
+    const block = match[1];
+    const cleanText = rawReplyText.replace(memRegex, '').trim();
+    const lines = block.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
+    return { cleanText: cleanText, newFacts: lines };
+  }
+
+  function saveNewMemoryFacts(facts) {
+    if (!facts.length) return;
+    facts.forEach(fact => {
+      memoryList.push({ fact: fact, createdAt: new Date().toISOString() });
+    });
+    if (memoryList.length > MAX_MEMORY_ITEMS) {
+      memoryList = memoryList.slice(memoryList.length - MAX_MEMORY_ITEMS);
+    }
+    lsSet(LS_MEMORY, JSON.stringify(memoryList));
+  }
 
   /* ===================== ERROR HUMANIZER ===================== */
   function humanizeError(err) {
@@ -695,14 +882,17 @@ Prinsip kamu:
     if (msg.includes('NO_INTERNET') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
       return 'Fajar OS belum bisa menghubungi Gemini. Cek koneksi internet kamu.\n\nDetail: ' + detail;
     }
-    if (msg.includes('API_KEY_INVALID') || msg.includes('401') || msg.includes('403') || msg.includes('API key not valid')) {
+    if (msg.includes('API_KEY_INVALID')) {
       return 'API key Gemini ditolak oleh server.\n\nDetail dari Gemini: ' + detail;
     }
-    if (msg.includes('MODEL_NOT_FOUND') || msg.includes('404') || msg.includes('not found')) {
+    if (msg.includes('MODEL_NOT_FOUND')) {
       return 'Model "' + getCurrentModel() + '" tidak ditemukan atau tidak tersedia untuk API key ini.\n\nDetail dari Gemini: ' + detail + '\n\nCoba ganti model di Pengaturan.';
     }
-    if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429') || msg.includes('quota')) {
-      return 'Kuota atau rate limit Gemini API tercapai.\n\nDetail: ' + detail;
+    if (msg.includes('RESOURCE_EXHAUSTED')) {
+      return 'Quota atau rate limit Gemini tercapai. Lihat status cooldown di atas kolom pesan.';
+    }
+    if (msg.includes('SERVER_ERROR')) {
+      return 'Server Gemini sedang bermasalah (bukan dari sisi Fajar OS).\n\nDetail: ' + detail;
     }
     if (msg.includes('PARSE_ERROR')) {
       return 'Response dari Gemini tidak sesuai format yang diharapkan. Coba kirim ulang.\n\nDetail: ' + detail;
@@ -710,7 +900,7 @@ Prinsip kamu:
     if (msg.includes('EMPTY_CANDIDATE') || msg.includes('SAFETY')) {
       return 'Gemini tidak memberikan jawaban untuk pesan ini (kemungkinan diblokir filter keamanan). Coba ubah pesan kamu.';
     }
-    return 'Fajar OS belum bisa menghubungi Gemini.\n\nDetail: ' + detail;
+    return 'Terjadi kesalahan saat menghubungi Gemini.\n\nDetail: ' + detail;
   }
 
   /* ===================== GEMINI API CALL ===================== */
@@ -790,7 +980,12 @@ Prinsip kamu:
         throw new Error('API_KEY_INVALID: ' + apiMsg);
       }
       if (response.status === 429) {
+        const retrySeconds = parseRetryDelaySeconds(data);
+        startCooldown(model, apiMsg, retrySeconds);
         throw new Error('RESOURCE_EXHAUSTED: ' + apiMsg);
+      }
+      if (response.status >= 500) {
+        throw new Error('SERVER_ERROR: ' + apiMsg);
       }
       throw new Error('API_ERROR ' + response.status + ': ' + apiMsg);
     }
@@ -813,84 +1008,6 @@ Prinsip kamu:
       .filter(Boolean);
 
     return textParts.join('\n').trim();
-  }
-
-  /* ===================== MEMORY EXTRACTION ===================== */
-  async function extractMemory(apiKey, model, userText, aiText) {
-    try {
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-
-      const extractPrompt = `Dari potongan percakapan berikut, identifikasi apakah ada FAKTA JANGKA PANJANG yang benar-benar berguna untuk diingat (preferensi user, project yang dikerjakan, keputusan penting, tujuan jangka panjang, workflow, tools yang dipakai, atau aturan kerja yang ditetapkan user).
-
-JANGAN ambil: percakapan random, emosi sesaat, hal sementara, informasi sensitif, API key, password, atau credential apapun.
-
-Jika tidak ada fakta jangka panjang yang layak disimpan, kembalikan array kosong.
-
-Balas HANYA dengan JSON array valid, tanpa markdown, tanpa penjelasan tambahan. Format:
-[{"fact": "isi fakta singkat dalam Bahasa Indonesia"}]
-
-Percakapan:
-User: ${userText}
-AI: ${aiText}`;
-
-      const body = {
-        contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 512 }
-      };
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify(body)
-      });
-
-      if (!response.ok) {
-        // memory bukan fitur kritikal, jadi tidak mengganggu UI, tapi tetap dicatat untuk debug
-        const errBody = await response.text().catch(() => '');
-        console.warn('[Fajar OS] Ekstraksi memory gagal (non-fatal). HTTP', response.status, errBody.slice(0, 200));
-        return;
-      }
-
-      const data = await response.json();
-      if (!data.candidates || !data.candidates.length) return;
-
-      let raw = data.candidates[0]?.content?.parts?.map(p => p.text || '').join('') || '';
-      raw = raw.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-
-      let facts;
-      try {
-        facts = JSON.parse(raw);
-      } catch (e) {
-        return; // gagal parse, skip diam-diam
-      }
-
-      if (!Array.isArray(facts)) return;
-
-      let changed = false;
-      facts.forEach(f => {
-        if (f && typeof f.fact === 'string' && f.fact.trim()) {
-          memoryList.push({
-            fact: f.fact.trim(),
-            createdAt: new Date().toISOString()
-          });
-          changed = true;
-        }
-      });
-
-      if (changed) {
-        // batasi jumlah memory
-        if (memoryList.length > MAX_MEMORY_ITEMS) {
-          memoryList = memoryList.slice(memoryList.length - MAX_MEMORY_ITEMS);
-        }
-        lsSet(LS_MEMORY, JSON.stringify(memoryList));
-      }
-    } catch (e) {
-      console.error('Memory extraction error:', e);
-      // diam-diam gagal, tidak mengganggu UX chat utama
-    }
   }
 
   /* ===================== NEW CHAT ===================== */
